@@ -86,24 +86,28 @@ char *str_replace(char *orig, char *rep, char *with) {
     return result;
 }
 
-char* get_weather(char *zipcode);
+char *get_weather(char *zipcode);
 void save_json(struct json_token *arr, LinkedListPtr list);
 void parse_sentence(char *sentence, LinkedListPtr list);
 Data make_data(struct json_token *tok);
+char *parse_day(char *original_date);
+char *parse_command(Data day_data, char *the_command);
 
-int main(void){
+int main(int argc, char *argv[]){
   LinkedListPtr weather = initLinkedList();
   struct json_token *arr, *tok, *loc, *city, *state;
   char *json, *results, location[100], zipcode[6] = "02148\0", command[256];
   char *token;
   char *end_str;
   int done;
+  Data day_data;
 
   printf("-- Welcome to WEATHERBOT, your personal weather assistant! --\n");
-/*  printf("\nPlease enter your zip code: ");
+  printf("\nPlease enter your zip code: ");
   fgets(zipcode, 7, stdin);
-  strtok(zipcode, "\n"); */
-
+  strtok(zipcode, "\n");
+  
+  // TO DO: error handling for invalid zipcodes
   json = get_weather(zipcode);
   arr = parse_json2(json, strlen(json));
   // Parse out and save the weather in a linked list
@@ -137,7 +141,7 @@ int main(void){
   return 0;
 }
 
-char* get_weather(char *zipcode){
+char *get_weather(char *zipcode){
   CURL *curl;
   CURLcode res;
   struct string s;
@@ -185,38 +189,41 @@ void save_json(struct json_token *arr, LinkedListPtr list){ // Parse the big ugl
   holder = strdup(tok->ptr);
   token = strtok_r(holder, "[{}", &end_str);
   while (token != NULL){
-      char *end_token;
-      // DON'T process the unneeded tokens
-      if(strcmp(token,",") != 0 && strcmp(token,",\"guid\":") != 0 && strncmp(token, "\"isPermaLink\"", 13) != 0){
-        printf("\na = %s\n", token);
+    char *end_token;
+    // DON'T process the unneeded tokens
+    if(strcmp(token,",") != 0 && strcmp(token,",\"guid\":") != 0 && strncmp(token, "\"isPermaLink\"", 13) != 0){
 
-        spare = str_replace(token, "\"", "");
-        spare2 = str_replace(spare, ":", ": \"");
-        spare = str_replace(spare2, ",", "\", ");
-        spare2 = str_replace(spare, "code", "{code");
+      spare = str_replace(token, "\"", "");
+      spare2 = str_replace(spare, ":", ": \"");
+      spare = str_replace(spare2, ",", "\", ");
+      spare2 = str_replace(spare, "code", "{code");
 
-        // add back in some formatting that got eaten
-        size_t len = strlen(spare2);
-        spare = malloc(len + 2);
-        strcpy(spare, spare2);
-        spare[len] = '\"';
-        spare[len + 1] = '}';
-        spare[len + 2] = '\0';
+      // add back in some formatting that got eaten
+      size_t len = strlen(spare2);
+      spare = malloc(len + 2);
+      strcpy(spare, spare2);
+      spare[len] = '\"';
+      spare[len + 1] = '}';
+      spare[len + 2] = '\0';
 
-        date_weather = parse_json2(spare, strlen(spare));
-        // extract the data for each day
-        day = make_data(date_weather);
-        // add it to the linked list
-        add(list, day, i);
-        i++;
-      }
+      date_weather = parse_json2(spare, strlen(spare));
+      // extract the data for each day
+      day = make_data(date_weather);
+      // add it to the linked list
+      add(list, day, i);
+      i++;
+    }
+    token = strtok_r(NULL, "[{}]", &end_str);
   }
 }
 
-void parse_sentence(char *sentence, LinkedListPtr list){ // Go through user input to see if they mentioned a day and a command
+void parse_sentence(char *sentence, LinkedListPtr list){ // Go through user input to see if they mentioned a day and a command, print appropriate response.
+  // This should really be two functions but I just don't care enough
   int i, found = 0;
-  char *the_day, *the_command;
-  char *word = strtok (sentence," ,.-?");
+  Data day_data;
+  day_data.high = 2000; // Initializing to garbage so I can check later if a valid day was found. If the high is ever 2000F, we're fucked anyway.
+  char *the_day, *the_command, *day_abbreviation;
+  char *word = strtok(sentence," ,.-?");
   char *days[] = {"Sunday", "Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday","today","tomorrow", 0};
   char *commands[] = {"weather", "temperature", "high", "low", "warm", "cold", "forecast", 0};
   while (word != NULL){
@@ -224,7 +231,6 @@ void parse_sentence(char *sentence, LinkedListPtr list){ // Go through user inpu
     while(days[i]){
       if(strcmp(days[i], word) == 0){ // Found a valid day
         the_day = word;
-        printf("Found day: %s\n", the_day);
         found++;
         break;
       }
@@ -233,20 +239,49 @@ void parse_sentence(char *sentence, LinkedListPtr list){ // Go through user inpu
     i = 0;
     while(commands[i]){
       if(strcmp(commands[i], word) == 0){ // Found a valid command
-        the_command = word;
-        printf("Found command: %s\n", the_command);
+        if(strcmp(word, "warm") == 0 || strcmp(word, "cold") == 0){ // This is needed for sensible sentence printing later. Prob in the wrong place.
+          the_command = "temperature";
+        }
+        else{
+          the_command = word;
+        }
         found++;
         break;
       }
       i++;
     }
-    word = strtok (NULL, " ,.-?");
+    word = strtok(NULL, " ,.-?");
   }
   if(found != 2){ // Nothing doing
     printf("Sorry, I didn't understand that. Give it another try?\n");
   }
   else{ // There's both a command and a day so we fetch the appropriate information
-    
+    if(strcmp(the_day, "today") == 0){ // let's do the easy ones first
+      day_data = check(list, 0);
+    }
+    else if(strcmp(the_day, "tomorrow") == 0){
+      day_data = check(list, 1);
+    }
+    else{
+      day_abbreviation = parse_day(the_day);
+      if(strcmp(day_abbreviation, "ERROR") != 0){ // Valid day abbreviation found
+        for(int i = 0; i < 5; i++){ // go through all five items in linked list
+          if(strcmp(day_abbreviation, check(list, i).day) == 0){ // did we hit the right day?
+            day_data = check(list, i);
+            break;
+          }
+        }
+      }
+      else{
+        printf("Sorry, I ran into an error. Try asking something else?\n");
+      }
+    }
+    if(day_data.high == 2000){
+      printf("Sorry, I don't have the forecast for %s yet! Ask me later.\n", the_day);
+    }
+    else{
+      printf("The %s for %s is %s.\n", the_command, the_day, parse_command(day_data, the_command)); // FINALLY PRINT THE GD RESULT
+    }
   }
 }
 
@@ -256,7 +291,6 @@ Data make_data(struct json_token *tok){ // Takes the weather for one day and mak
   struct json_token *holder;
 
   holder = find_json_token(tok, "date");
-  printf("Date: %.*s\n", holder->len, holder->ptr);
   data.date = strndup(holder->ptr, holder->len);
   holder = find_json_token(tok, "day");
   data.day = strndup(holder->ptr, holder->len);
@@ -270,4 +304,54 @@ Data make_data(struct json_token *tok){ // Takes the weather for one day and mak
   data.description = strndup(holder->ptr, holder->len);
 
   return data;
+}
+
+char *parse_day(char *original_date){
+  if(strcmp(original_date, "Sunday") == 0){
+    return "Sun";
+  }
+  else if(strcmp(original_date, "Monday") == 0){
+    return "Mon";
+  }
+  else if(strcmp(original_date, "Tuesday") == 0){
+    return "Tue";
+  }
+  else if(strcmp(original_date, "Wednesday") == 0){
+    return "Wed";
+  }
+  else if(strcmp(original_date, "Thursday") == 0){
+    return "Thu";
+  }
+  else if(strcmp(original_date, "Friday") == 0){
+    return "Fri";
+  }
+  else if(strcmp(original_date, "Saturday") == 0){
+    return "Sat";
+  }
+  else{
+    return "ERROR";
+  }
+}
+
+char *parse_command(Data day_data, char *the_command){
+  char *commands[] = {"weather", "temperature", "high", "low", "warm", "cold", "forecast", 0};
+  char *temperature = malloc(50), *high = malloc(10), *low = malloc(10);
+  if(strcmp(the_command, "weather") == 0 || strcmp(the_command, "forecast") == 0){
+    return day_data.description;
+  }
+  else if(strcmp(the_command, "temperature") == 0){
+    sprintf(temperature, "a high of %d and a low of %d", day_data.high, day_data.low);
+    return temperature;
+  }
+  else if(strcmp(the_command, "high") == 0){
+    sprintf(temperature, "%d", day_data.high);
+    return temperature;
+  }
+  else if(strcmp(the_command, "low") == 0){
+    sprintf(temperature, "%d", day_data.low);
+    return temperature;
+  }
+  else{
+    return "ERROR";
+  }
 }
