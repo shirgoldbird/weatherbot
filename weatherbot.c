@@ -225,7 +225,7 @@ LinkedListPtr parse_sentence(char *sentence, LinkedListPtr list){ // Go through 
   // This should really be two functions but I just don't care enough
   int i, found_cmd = 0, found_day = 0;
   Data day_data;
-  day_data.high = 2000; // Initializing to garbage so I can check later if a valid day was found. If the high is ever 2000F, we're fucked anyway.
+  day_data.high = 420; // Should probably be some more reasonable sentinal value but the joke was too hard to pass up
   char *the_day, *the_command, *day_abbreviation;
   char *word = strtok(sentence," ,.-?");
   char *days[] = {"Sunday", "Monday", "Tuesday", "Wednesday","Thursday","Friday","Saturday","today","tomorrow", 0};
@@ -287,7 +287,7 @@ LinkedListPtr parse_sentence(char *sentence, LinkedListPtr list){ // Go through 
         printf("Sorry, I ran into an error. Try asking something else?\n");
       }
     }
-    if(day_data.high == 2000){
+    if(day_data.high == 420){
       printf("Sorry, I don't have the forecast for %s yet! Ask me later.\n", the_day);
     }
     else if(the_day == NULL){
